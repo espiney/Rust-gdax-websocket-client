@@ -9,12 +9,10 @@ use std::collections::HashMap;
 use websocket::client::ClientBuilder;
 use websocket::{Message, OwnedMessage};
 
-use redis::Commands;
-
 const CONNECTION: &'static str = "ws://127.0.0.1";
 
 fn main() {
-    println!("Connecting to {}", CONNECTION);
+    println!("WSB MAIN CONNECTING {}", CONNECTION);
 
     let client = ClientBuilder::new(CONNECTION)
         .unwrap()
@@ -22,10 +20,9 @@ fn main() {
         .connect_insecure()
         .unwrap();
 
-    let redis_client = redis::Client::open("redis://127.0.0.1/");
     let mut _counter = 0;
 
-    println!("Successfully connected");
+    println!("WSB MAIN CONNECT");
 
     let (mut receiver, mut sender) = client.split().unwrap();
 
@@ -39,7 +36,7 @@ fn main() {
             let message = match rx.recv() {
                 Ok(m) => m,
                 Err(e) => {
-                    println!("Send Loop: {:?}", e);
+                    println!("WSB TX ERROR MAIN {:?}", e);
                     return;
                 }
             };
@@ -55,7 +52,7 @@ fn main() {
             match sender.send_message(&message) {
                 Ok(()) => (),
                 Err(e) => {
-                    println!("Send Loop: {:?}", e);
+                    println!("WSB TX ERROR SEND {:?}", e);
                     let _ = sender.send_message(&Message::close());
                     return;
                 }
@@ -64,6 +61,10 @@ fn main() {
     });
 
     let receive_loop = thread::spawn(move || {
+        // Send subscribe packet
+        let subscribe_text = "{\"type\": \"subscribe\", \"channels\": [{\"name\": \"full\", \"product_ids\": [\"MATIC-BTC\", \"SUSHI-EUR\", \"SUSHI-GBP\", \"MATIC-GBP\", \"MATIC-USD\", \"MATIC-EUR\", \"SKL-GBP\", \"SKL-USD\", \"SKL-BTC\", \"SKL-EUR\", \"ADA-USD\", \"ADA-BTC\", \"ADA-EUR\", \"ADA-GBP\", \"SUSHI-BTC\", \"SUSHI-ETH\", \"SUSHI-USD\", \"AAVE-USD\", \"ALGO-BTC\", \"BNT-BTC\", \"BNT-USD\", \"CGLD-EUR\", \"COMP-BTC\", \"LTC-BTC\", \"ETC-BTC\", \"ETH-BTC\", \"LINK-ETH\", \"CVC-USDC\", \"DNT-USDC\", \"LOOM-USDC\", \"LINK-GBP\", \"AAVE-BTC\", \"AAVE-EUR\", \"BTC-USD\", \"AAVE-GBP\", \"BAT-ETH\", \"BNT-EUR\", \"BNT-GBP\", \"DAI-USD\", \"EOS-BTC\", \"FIL-BTC\", \"FIL-EUR\", \"FIL-GBP\", \"FIL-USD\", \"GRT-BTC\", \"GRT-EUR\", \"GRT-GBP\", \"GRT-USD\", \"KNC-USD\", \"LINK-BTC\", \"LRC-BTC\", \"LRC-USD\", \"ALGO-GBP\", \"LTC-EUR\", \"BAL-USD\", \"BAND-USD\", \"BAND-BTC\", \"BAND-EUR\", \"BAND-GBP\", \"CGLD-BTC\", \"CGLD-USD\", \"MKR-BTC\", \"MKR-USD\", \"NMR-USD\", \"NMR-BTC\", \"NMR-EUR\", \"NMR-GBP\", \"NU-BTC\", \"NU-EUR\", \"NU-GBP\", \"NU-USD\", \"OMG-BTC\", \"OMG-EUR\", \"OMG-GBP\", \"REN-BTC\", \"REN-USD\", \"REP-BTC\", \"REP-USD\", \"SNX-BTC\", \"SNX-EUR\", \"SNX-GBP\", \"SNX-USD\", \"UMA-BTC\", \"UMA-EUR\", \"UMA-GBP\", \"LTC-GBP\", \"UNI-BTC\", \"LTC-USD\", \"ETC-EUR\", \"ETC-GBP\", \"ETC-USD\", \"ALGO-USD\", \"BAT-USDC\", \"ETH-GBP\", \"ETH-USDC\", \"BCH-BTC\", \"BCH-EUR\", \"BCH-GBP\", \"BCH-USD\", \"ETH-USD\", \"UNI-USD\", \"LINK-EUR\", \"BTC-EUR\", \"EOS-USD\", \"BTC-USDC\", \"BTC-GBP\", \"KNC-BTC\", \"OMG-USD\", \"UMA-USD\", \"WBTC-BTC\", \"WBTC-USD\", \"XLM-BTC\", \"XLM-EUR\", \"ETH-EUR\", \"ETH-DAI\", \"GNT-USDC\", \"MANA-USDC\", \"LINK-USD\", \"ALGO-EUR\", \"ATOM-BTC\", \"ATOM-USD\", \"BAL-BTC\", \"CGLD-GBP\", \"COMP-USD\", \"DAI-USDC\", \"DASH-BTC\", \"DASH-USD\", \"EOS-EUR\", \"OXT-USD\", \"XLM-USD\", \"XTZ-USD\", \"XTZ-EUR\", \"XTZ-GBP\", \"XTZ-BTC\", \"YFI-BTC\", \"YFI-USD\", \"ZEC-USD\", \"ZEC-BTC\", \"ZEC-USDC\", \"ZRX-BTC\", \"ZRX-EUR\", \"ZRX-USD\"]}]}".to_string();
+        tx_1.send(OwnedMessage::Text(subscribe_text));
+
         // Receive loop
         for message in receiver.incoming_messages() {
             // Updated the general RX Counter
@@ -73,7 +74,7 @@ fn main() {
             let message = match message {
                 Ok(m) => m,
                 Err(e) => {
-                    println!("Receive Loop: {:?}", e);
+                    println!("WSB RX ERROR MAIN {:?}", e);
                     let _ = tx_1.send(OwnedMessage::Close(None));
                     return;
                 }
@@ -91,7 +92,7 @@ fn main() {
                             return;
                         },
                         Err(e) => {
-                            println!("Receive Loop: {:?}", e);
+                            println!("WSB RX ERROR PING {:?}", e);
                             return;
                         }
                     }
@@ -100,7 +101,7 @@ fn main() {
                     content
                 }
                 _ => {
-                    println!("RXC({:?} Unhandled packet: {:?}",_counter,message);
+                    println!("WSB RX ERROR STREAM Unhandled packet {:?}, {:?}",message,_counter);
                     return;
                 }
             };
@@ -134,10 +135,7 @@ fn main() {
                     packet_hash.insert(keyval_lhs,keyval_rhs.trim_start_matches(":"));
                 }
 
-                // let redis_pkey = format!("{}{}",packet_hash["product_id"],packet_hash["sequence"]);
-                // redis::cmd("SET").arg(redis_pkey).arg(message).query(redis_client);
-
-                println!("{}:{}",packet_hash["product_id"],packet_hash["sequence"]);
+                println!("WSB RX DATA {} {} {}",packet_hash["product_id"],packet_hash["sequence"],message);
             }
         }
     });
@@ -164,7 +162,7 @@ fn main() {
         match tx.send(message) {
             Ok(()) => (),
             Err(e) => {
-                println!("Main Loop: {:?}", e);
+                println!("WSB MAIN ERROR {:?}", e);
                 break;
             }
         }
@@ -172,10 +170,10 @@ fn main() {
 
     // We're exiting
 
-    println!("Waiting for child threads to exit");
+    println!("WSB MAIN EXITING");
 
     let _ = send_loop.join();
     let _ = receive_loop.join();
 
-    println!("Exited");
+    println!("WSB MAIN EXIT");
 }
