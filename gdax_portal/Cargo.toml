@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 websocket = "0.26.2"
+redis = "0.20.0"
