@@ -1,13 +1,17 @@
 extern crate websocket;
+extern crate redis;
 
 use std::io::stdin;
 use std::sync::mpsc::channel;
 use std::thread;
+use std::collections::HashMap;
 
 use websocket::client::ClientBuilder;
 use websocket::{Message, OwnedMessage};
 
-const CONNECTION: &'static str = "wss://echo.websocket.org";
+use redis::Commands;
+
+const CONNECTION: &'static str = "ws://127.0.0.1";
 
 fn main() {
     println!("Connecting to {}", CONNECTION);
@@ -17,6 +21,9 @@ fn main() {
         .add_protocol("rust-websocket")
         .connect_insecure()
         .unwrap();
+
+    let redis_client = redis::Client::open("redis://127.0.0.1/");
+    let mut _counter = 0;
 
     println!("Successfully connected");
 
@@ -41,7 +48,7 @@ fn main() {
                     let _ = sender.send_message(&message);
                     // If it's a close message, just send it and then return.
                     return;
-                }
+                },
                 _ => (),
             }
             // Send the message
@@ -59,6 +66,10 @@ fn main() {
     let receive_loop = thread::spawn(move || {
         // Receive loop
         for message in receiver.incoming_messages() {
+            // Updated the general RX Counter
+            _counter += 1;
+
+            // Match specific events in the websocket stream
             let message = match message {
                 Ok(m) => m,
                 Err(e) => {
@@ -67,7 +78,7 @@ fn main() {
                     return;
                 }
             };
-            match message {
+            let message = match message {
                 OwnedMessage::Close(_) => {
                     // Got a close message, so send a close message and return
                     let _ = tx_1.send(OwnedMessage::Close(None));
@@ -76,15 +87,57 @@ fn main() {
                 OwnedMessage::Ping(data) => {
                     match tx_1.send(OwnedMessage::Pong(data)) {
                         // Send a pong in response
-                        Ok(()) => (),
+                        Ok(()) => {
+                            return;
+                        },
                         Err(e) => {
                             println!("Receive Loop: {:?}", e);
                             return;
                         }
                     }
                 }
-                // Say what we received
-                _ => println!("Receive Loop: {:?}", message),
+                OwnedMessage::Text(content) => { 
+                    content
+                }
+                _ => {
+                    println!("RXC({:?} Unhandled packet: {:?}",_counter,message);
+                    return;
+                }
+            };
+
+            // Lets digest this json packet
+            let message_clean = message
+                .trim_end_matches("}")
+                .trim_start_matches("{")
+                .replace("\n","")
+                .replace("\r","")
+                .replace("\"","");
+
+            // Attempt to extract type
+            let (_,type_rhs) =
+                message_clean.split_at(message_clean.find("type").unwrap()+5);
+            let (message_type,_) =
+                type_rhs.split_at(message_clean.find(",").unwrap()-5);
+
+            // If we are a subscriprion, then simply return we do not care
+            if message_type != "subscriptions" {
+                // If we got here we have a true string!
+                let mut packet_hash = HashMap::new();
+
+                // Split on ',' as we should have no nested classes
+                let message_split = message_clean.split(",");
+
+                // Save all the fragments within a hash
+                for item in message_split {
+                    let keyval: String = item.to_string();
+                    let (keyval_lhs,keyval_rhs) = item.split_at(keyval.find(":").unwrap());
+                    packet_hash.insert(keyval_lhs,keyval_rhs.trim_start_matches(":"));
+                }
+
+                // let redis_pkey = format!("{}{}",packet_hash["product_id"],packet_hash["sequence"]);
+                // redis::cmd("SET").arg(redis_pkey).arg(message).query(redis_client);
+
+                println!("{}:{}",packet_hash["product_id"],packet_hash["sequence"]);
             }
         }
     });
