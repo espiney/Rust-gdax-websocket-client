@@ -4,7 +4,7 @@ extern crate redis;
 use std::io::stdin;
 use std::sync::mpsc::channel;
 use std::thread;
-use std::collections::HashMap;
+//use std::collections::HashMap;
 
 use websocket::client::ClientBuilder;
 use websocket::{Message, OwnedMessage};
@@ -123,19 +123,19 @@ fn main() {
             // If we are a subscriprion, then simply return we do not care
             if message_type != "subscriptions" {
                 // If we got here we have a true string!
-                let mut packet_hash = HashMap::new();
+                // let mut packet_hash = HashMap::new();
 
                 // Split on ',' as we should have no nested classes
-                let message_split = message_clean.split(",");
+                // let message_split = message_clean.split(",");
 
                 // Save all the fragments within a hash
-                for item in message_split {
-                    let keyval: String = item.to_string();
-                    let (keyval_lhs,keyval_rhs) = item.split_at(keyval.find(":").unwrap());
-                    packet_hash.insert(keyval_lhs,keyval_rhs.trim_start_matches(":"));
-                }
+                // for item in message_split {
+                //     let keyval: String = item.to_string();
+                //     let (keyval_lhs,keyval_rhs) = item.split_at(keyval.find(":").unwrap());
+                //     packet_hash.insert(keyval_lhs,keyval_rhs.trim_start_matches(":"));
+                // }
 
-                println!("WSB RX DATA {} {} {}",packet_hash["product_id"],packet_hash["sequence"],message);
+                println!("WSB RX DATA {}",message_clean);
             }
         }
     });
