@@ -118,10 +118,6 @@ fn main() {
 
             // Lets digest this json packet
             let message_clean = message
-                .trim_end_matches('}')
-                .trim_start_matches('{')
-                .replace("\n","")
-                .replace("\r","")
                 .replace("\"","");
 
             // Attempt to extract type
@@ -142,10 +138,13 @@ fn main() {
                 let (message_sequence,_) =
                     sequence.split_at(sequence.find(',').unwrap());
 
+                //println!("WSB RX DATA {}:{} {}",product_id,message_sequence,message);
+
                 let pkey = format!("{}:{}",product_id,message_sequence);
                 let expect = format!("failed to execute SET for '{}'",pkey);
                 let _: () = redis::cmd("SET").arg(pkey).arg(message).query(&mut conn).expect(&expect);
-                //println!("WSB RX DATA {}:{} {}",product_id,message_sequence,message);
+
+                
             }
         }
     });
