@@ -5,33 +5,56 @@
 # number of forked processes that can run at any given time.
 use warnings;
 use strict;
-use POE qw(Wheel::Run Filter::Reference);
+use POE qw(Wheel::Run Filter::Reference Wheel::ReadWrite);
+
+use v5.32.0;
+
+use Redis::Fast;
+
+my $redis = Redis::Fast->new(
+    sock        =>  '/tmp/redis.sock',
+    reconnect   =>  2,
+    every       =>  100_000
+);
 
 # Start the session that will manage all the children.  The _start and
 # next_task events are handled by the same function.
 POE::Session->create(
     inline_states => {
-        _start      => \&start_tasks,
-        next_task   => \&start_tasks,
-        task_result => \&handle_task_result,
-        task_done   => \&handle_task_done,
-        task_debug  => \&handle_task_debug,
-        sig_child   => \&sig_child,
+        _start              =>  \&start,
+        new_worker          =>  \&new_worker,
+        task_result         =>  \&handle_task_result,
+        task_stdout         =>  \&handle_task_stdout,
+        task_stderr         =>  \&handle_task_stderr,
+        process_market_data =>  \&process_market_data,
+        sig_child           =>  \&sig_child,
+    },
+    heap => {
     }
 );
 
-sub start_tasks {
+sub start {
+    my ($kernel,$heap) =  @_[KERNEL, HEAP];
+    $kernel->yield('new_worker');
+    # $kernel->delay_add('new_worker' => 5);
+    # $kernel->delay_add('new_worker' => 10);
+    # $kernel->delay_add('new_worker' => 15);
+}
+
+sub new_worker {
     my ($kernel, $heap) = @_[KERNEL, HEAP];
 
     my $task = POE::Wheel::Run->new(
         Program      => 'sh -c gdax_portal/run_release',
         StdoutFilter => POE::Filter::Line->new(),
-        StdoutEvent  => "task_result",
-        StderrEvent  => "task_debug",
+        StdoutEvent  => "task_stdout",
+        StderrEvent  => "task_stderr",
         CloseEvent   => "task_done",
     );
 
-    $heap->{task}->{$task->ID} = $task;
+    $heap->{task}->{$task->ID} = { obj=>$task, pid=>$task->PID, id=>$task->ID, rx=>0 };
+    $heap->{task}->{$task->PID} = $task->ID;
+
     $kernel->sig_child($task->PID, "sig_child");
 }
 
@@ -39,33 +62,66 @@ sub start_tasks {
 # Handle information returned from the task.  Since we're using
 # POE::Filter::Reference, the $result is however it was created in the
 # child process.  In this sample, it's a hash reference.
-sub handle_task_result {
-    my $result = $_[ARG0];
-    print "Result for $result->{task}: $result->{status}\n";
+sub handle_task_stdout {
+    my ($kernel,$heap,$stdout,$wheel_id) = @_[KERNEL,HEAP,ARG0,ARG1];
+
+    # Increment the rc count for the wheel
+    $heap->{task}->{$wheel_id}->{rx}++;
+    if ($heap->{task}->{$wheel_id}->{rx} % 100000 == 0) {
+        say "worker($wheel_id): ".$heap->{task}->{$wheel_id}->{rx}." processed records.";
+    }
+
+    # 0  1   2    3
+    #WSB RX DATA type:open,side:buy,product_id:FIL-EUR,time:2021-03-21T23:51:47.231169Z,sequence:370308120,price:68.1768,order_id:7f9f9ce3-ebe4-45ff-8b63-ed0eb5415be2,remaining_size:40
+    my @dataset = split(/\s+/,$stdout);
+
+    if (defined($dataset[3]) && $dataset[1] eq 'RX' && $dataset[2] eq 'DATA') {
+        my @market_data = split(/\,/,$dataset[3]);
+        foreach my $datapair (@market_data) {
+            my ($key,$val) = split(/\:/,$datapair,2);
+            $redis->set($key => $val);
+        }
+        return;
+    }
+
+    say join(' ',"debug($wheel_id):",@dataset);
+    
+    if (defined($dataset[3]) && $dataset[2] eq 'ERROR') {
+        my $pid = $heap->{task}->{$wheel_id}->{pid};
+        kill 1,$pid;
+        say "Kill($wheel_id): 1";
+    }
 }
 
 # Catch and display information from the child's STDERR.  This was
 # useful for debugging since the child's warnings and errors were not
 # being displayed otherwise.
-sub handle_task_debug {
-    my $result = $_[ARG0];
-    print "Debug: $result\n";
+sub handle_task_stderr {
+    my ($kernel,$heap,$result,$wheel_id) = @_[KERNEL,HEAP,ARG0,ARG1];
+    print "Debug($wheel_id): $result\n";
 }
 
-# The task is done.  Delete the child wheel, and try to start a new
-# task to take its place.
-sub handle_task_done {
-    my ($kernel, $heap, $task_id) = @_[KERNEL, HEAP, ARG0];
-    delete $heap->{task}->{$task_id};
-    $kernel->yield("next_task");
+sub handle_task_result {
+    my ($kernel,$heap,$result,$wheel_id) = @_[KERNEL,HEAP,ARG0,ARG1];
+    say "Task ended($wheel_id), restarting";
+
+    my $pid = delete $heap->{task}->{$wheel_id}->{pid};
+    delete $heap->{task}->{$pid};
+
+    $kernel->yield('new_worker');
 }
 
 # Detect the CHLD signal as each of our children exits.
 sub sig_child {
-  my ($heap, $sig, $pid, $exit_val) = @_[HEAP, ARG0, ARG1, ARG2];
-  my $details = delete $heap->{$pid};
+    my ($kernel,$heap, $sig, $pid, $exit_val) = @_[KERNEL,HEAP, ARG0, ARG1, ARG2];
 
-  # warn "$$: Child $pid exited";
+    my $wid = delete $heap->{task}->{$pid};
+    my $rxc = $heap->{task}->{$wid}->{rx};
+    delete $heap->{task}->{$wid};
+
+    say "Sig($wid) received on worker, pid $pid (rx: $rxc)";
+
+    $kernel->yield('new_worker');
 }
 
 # Run until there are no more tasks.

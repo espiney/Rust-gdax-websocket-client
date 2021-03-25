@@ -118,24 +118,21 @@ fn main() {
             let (_,type_rhs) =
                 message_clean.split_at(message_clean.find("type").unwrap()+5);
             let (message_type,_) =
-                type_rhs.split_at(message_clean.find(",").unwrap()-5);
+                type_rhs.split_at(type_rhs.find(",").unwrap());
 
             // If we are a subscriprion, then simply return we do not care
             if message_type != "subscriptions" {
-                // If we got here we have a true string!
-                // let mut packet_hash = HashMap::new();
+                let (_,product_rhs) = 
+                    message_clean.split_at(message_clean.find("product_id").unwrap()+11);
+                let (product_id,_) =
+                    product_rhs.split_at(product_rhs.find(",").unwrap());
 
-                // Split on ',' as we should have no nested classes
-                // let message_split = message_clean.split(",");
+                let (_,sequence) = 
+                    message_clean.split_at(message_clean.find("sequence").unwrap()+9);
+                let (message_sequence,_) =
+                    sequence.split_at(sequence.find(",").unwrap());
 
-                // Save all the fragments within a hash
-                // for item in message_split {
-                //     let keyval: String = item.to_string();
-                //     let (keyval_lhs,keyval_rhs) = item.split_at(keyval.find(":").unwrap());
-                //     packet_hash.insert(keyval_lhs,keyval_rhs.trim_start_matches(":"));
-                // }
-
-                println!("WSB RX DATA {}",message_clean);
+                println!("WSB RX DATA {}:{} {}",product_id,message_sequence,message);
             }
         }
     });

@@ -1,0 +1,8 @@
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/obj/Debug/.NETFramework,Version=v4.5.AssemblyAttribute.cs
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/bin/Debug/gdax_websocket_ingress_controller.exe.config
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/bin/Debug/gdax_websocket_ingress_controller.pdb
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/bin/Debug/gdax_websocket_ingress_controller.exe
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/obj/Debug/gdax_websocket_ingress_controller.exe
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/obj/Debug/gdax_websocket_ingress_controller.pdb
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/bin/Debug/Newtonsoft.Json.dll
+/usr/home/paul.webster/dev/rust/gdax_websocket_ingress_controller/gdax_websocket_ingress_controller/bin/Debug/websocket-sharp.dll
