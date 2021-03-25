@@ -9,14 +9,6 @@ use POE qw(Wheel::Run Filter::Reference Wheel::ReadWrite);
 
 use v5.32.0;
 
-use Redis::Fast;
-
-my $redis = Redis::Fast->new(
-    sock        =>  '/tmp/redis.sock',
-    reconnect   =>  2,
-    every       =>  100_000
-);
-
 # Start the session that will manage all the children.  The _start and
 # next_task events are handled by the same function.
 POE::Session->create(
@@ -36,9 +28,9 @@ POE::Session->create(
 sub start {
     my ($kernel,$heap) =  @_[KERNEL, HEAP];
     $kernel->yield('new_worker');
-    # $kernel->delay_add('new_worker' => 5);
-    # $kernel->delay_add('new_worker' => 10);
-    # $kernel->delay_add('new_worker' => 15);
+    $kernel->delay_add('new_worker' => 5);
+    $kernel->delay_add('new_worker' => 10);
+    $kernel->delay_add('new_worker' => 15);
 }
 
 sub new_worker {
@@ -71,25 +63,15 @@ sub handle_task_stdout {
         say "worker($wheel_id): ".$heap->{task}->{$wheel_id}->{rx}." processed records.";
     }
 
-    # 0  1   2    3
-    #WSB RX DATA type:open,side:buy,product_id:FIL-EUR,time:2021-03-21T23:51:47.231169Z,sequence:370308120,price:68.1768,order_id:7f9f9ce3-ebe4-45ff-8b63-ed0eb5415be2,remaining_size:40
-    my @dataset = split(/\s+/,$stdout);
+    my @dataset = split(/\s+/,$stdout,5);
 
-    if (defined($dataset[3]) && $dataset[1] eq 'RX' && $dataset[2] eq 'DATA') {
-        my @market_data = split(/\,/,$dataset[3]);
-        foreach my $datapair (@market_data) {
-            my ($key,$val) = split(/\:/,$datapair,2);
-            $redis->set($key => $val);
-        }
-        return;
-    }
-
-    say join(' ',"debug($wheel_id):",@dataset);
-    
     if (defined($dataset[3]) && $dataset[2] eq 'ERROR') {
         my $pid = $heap->{task}->{$wheel_id}->{pid};
         kill 1,$pid;
-        say "Kill($wheel_id): 1";
+        say "worker($wheel_id) Kill";
+    }
+    else {
+        say "($wheel_id): $stdout";
     }
 }
 
