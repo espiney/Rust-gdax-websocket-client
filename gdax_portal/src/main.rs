@@ -12,7 +12,7 @@ use websocket::{Message, OwnedMessage};
 const CONNECTION: &'static str = "ws://127.0.0.1";
 
 fn connect() -> redis::Connection {
-    let redis_conn_url = "redis://127.0.0.1";
+    let redis_conn_url = "redis+unix:///tmp/redis.sock";
     redis::Client::open(redis_conn_url)
         .expect("Invalid connection URL")
         .get_connection()
@@ -118,8 +118,8 @@ fn main() {
 
             // Lets digest this json packet
             let message_clean = message
-                .trim_end_matches("}")
-                .trim_start_matches("{")
+                .trim_end_matches('}')
+                .trim_start_matches('{')
                 .replace("\n","")
                 .replace("\r","")
                 .replace("\"","");
@@ -128,19 +128,19 @@ fn main() {
             let (_,type_rhs) =
                 message_clean.split_at(message_clean.find("type").unwrap()+5);
             let (message_type,_) =
-                type_rhs.split_at(type_rhs.find(",").unwrap());
+                type_rhs.split_at(type_rhs.find(',').unwrap());
 
             // If we are a subscriprion, then simply return we do not care
             if message_type != "subscriptions" {
                 let (_,product_rhs) = 
                     message_clean.split_at(message_clean.find("product_id").unwrap()+11);
                 let (product_id,_) =
-                    product_rhs.split_at(product_rhs.find(",").unwrap());
+                    product_rhs.split_at(product_rhs.find(',').unwrap());
 
                 let (_,sequence) = 
                     message_clean.split_at(message_clean.find("sequence").unwrap()+9);
                 let (message_sequence,_) =
-                    sequence.split_at(sequence.find(",").unwrap());
+                    sequence.split_at(sequence.find(',').unwrap());
 
                 let pkey = format!("{}:{}",product_id,message_sequence);
                 let expect = format!("failed to execute SET for '{}'",pkey);
