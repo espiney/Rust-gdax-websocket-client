@@ -11,8 +11,18 @@ use websocket::{Message, OwnedMessage};
 
 const CONNECTION: &'static str = "ws://127.0.0.1";
 
+fn connect() -> redis::Connection {
+    let redis_conn_url = "redis://127.0.0.1";
+    redis::Client::open(redis_conn_url)
+        .expect("Invalid connection URL")
+        .get_connection()
+        .expect("failed to connect to Redis")
+}
+
 fn main() {
     println!("WSB MAIN CONNECTING {}", CONNECTION);
+
+    let mut conn = connect();
 
     let client = ClientBuilder::new(CONNECTION)
         .unwrap()
@@ -132,7 +142,10 @@ fn main() {
                 let (message_sequence,_) =
                     sequence.split_at(sequence.find(",").unwrap());
 
-                println!("WSB RX DATA {}:{} {}",product_id,message_sequence,message);
+                let pkey = format!("{}:{}",product_id,message_sequence);
+                let expect = format!("failed to execute SET for '{}'",pkey);
+                let _: () = redis::cmd("SET").arg(pkey).arg(message).query(&mut conn).expect(&expect);
+                //println!("WSB RX DATA {}:{} {}",product_id,message_sequence,message);
             }
         }
     });
