@@ -1,13 +1,14 @@
 extern crate websocket;
 extern crate redis;
 
-use std::io::stdin;
+//use std::io::stdin;
 use std::sync::mpsc::channel;
 use std::thread;
-//use std::collections::HashMap;
 
 use websocket::client::ClientBuilder;
 use websocket::{Message, OwnedMessage};
+
+//use redis::{PubSubCommands, ControlFlow};
 
 const CONNECTION: &'static str = "ws://127.0.0.1";
 
@@ -19,18 +20,19 @@ fn connect() -> redis::Connection {
         .expect("failed to connect to Redis")
 }
 
+
 fn main() {
     println!("WSB MAIN CONNECTING {}", CONNECTION);
 
-    let mut conn = connect();
+    // Multiple connections to redis ...
+    let mut conn_set = connect();
+    let mut conn_publish = connect();
 
     let client = ClientBuilder::new(CONNECTION)
         .unwrap()
         .add_protocol("rust-websocket")
         .connect_insecure()
         .unwrap();
-
-    let mut _counter = 0;
 
     println!("WSB MAIN CONNECT");
 
@@ -77,9 +79,6 @@ fn main() {
 
         // Receive loop
         for message in receiver.incoming_messages() {
-            // Updated the general RX Counter
-            _counter += 1;
-
             // Match specific events in the websocket stream
             let message = match message {
                 Ok(m) => m,
@@ -111,73 +110,40 @@ fn main() {
                     content
                 }
                 _ => {
-                    println!("WSB RX ERROR STREAM Unhandled packet {:?}, {:?}",message,_counter);
+                    println!("WSB RX ERROR STREAM Unhandled packet {:?}",message);
                     return;
                 }
             };
 
-            // Lets digest this json packet
-            let message_clean = message
-                .replace("\"","");
-
             // Attempt to extract type
             let (_,type_rhs) =
-                message_clean.split_at(message_clean.find("type").unwrap()+5);
+                message.split_at(message.find("type").unwrap()+7);
             let (message_type,_) =
-                type_rhs.split_at(type_rhs.find(',').unwrap());
+                type_rhs.split_at(type_rhs.find('"').unwrap());
 
             // If we are a subscriprion, then simply return we do not care
-            if message_type == "subscriptions" { return }
-        
-            let (_,product_rhs) = 
-                message_clean.split_at(message_clean.find("product_id").unwrap()+11);
-            let (product_id,_) =
-                product_rhs.split_at(product_rhs.find(',').unwrap());
+            if message_type != "subscriptions" { 
+                let (_,product_rhs) =
+                    message.split_at(message.find("product_id").unwrap()+13);
+                let (product_id,_) =
+                    product_rhs.split_at(product_rhs.find('"').unwrap());
 
-            let (_,sequence) = 
-                message_clean.split_at(message_clean.find("sequence").unwrap()+9);
-            let (message_sequence,_) =
-                sequence.split_at(sequence.find(',').unwrap());
+                let (_,sequence) =
+                    message.split_at(message.find("sequence").unwrap()+10);
+                let (message_sequence,_) =
+                    sequence.split_at(sequence.find(',').unwrap());
 
-            //println!("WSB RX DATA {}:{} {}",product_id,message_sequence,message);
+                // Add a pubsub for the currency if one does not exist
+                let pkey = format!("{}:{}",product_id,message_sequence);
 
-            let pkey = format!("{}:{}",product_id,message_sequence);
-            let expect = format!("failed to execute SET for '{}'",pkey);
-            let _: () = redis::cmd("SET").arg(pkey).arg(message).query(&mut conn).expect(&expect);
+                // Set it in the main set
+                let _: () = redis::cmd("SET").arg(pkey).arg(&message).query(&mut conn_set).expect("");
+                let _: () = redis::cmd("PUBLISH").arg(product_id).arg(message_sequence).query(&mut conn_publish).expect("");
+
+                //pubsub.subscribe(product_id);
+            }
         }
     });
-
-    loop {
-        let mut input = String::new();
-
-        stdin().read_line(&mut input).unwrap();
-
-        let trimmed = input.trim();
-
-        let message = match trimmed {
-            "/close" => {
-                // Close the connection
-                let _ = tx.send(OwnedMessage::Close(None));
-                break;
-            }
-            // Send a ping
-            "/ping" => OwnedMessage::Ping(b"PING".to_vec()),
-            // Otherwise, just send text
-            _ => OwnedMessage::Text(trimmed.to_string()),
-        };
-
-        match tx.send(message) {
-            Ok(()) => (),
-            Err(e) => {
-                println!("WSB MAIN ERROR {:?}", e);
-                break;
-            }
-        }
-    }
-
-    // We're exiting
-
-    println!("WSB MAIN EXITING");
 
     let _ = send_loop.join();
     let _ = receive_loop.join();
