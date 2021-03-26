@@ -15,13 +15,12 @@ use Try::Tiny;
 # Capture ctrl-c
 $SIG{INT} = \&killall;
 my $halt = 0;
+my $worker_count = 3;
 
 sub killall {
     $SIG{INT} = \&killall;
     $halt = 1;
-    `killall gdax_portal`; # should really do a poe::kernel call to a kill handler
-    sleep(5);
-    exit;
+    POE::Kernel->post('main','shutdown');
 }
 
 # Global objects
@@ -51,6 +50,8 @@ POE::Session->create(
         task_stderr         =>  \&handle_task_stderr,
         process_market_data =>  \&process_market_data,
         sig_child           =>  \&sig_child,
+        shutdown            =>  \&shutdown,
+        exit_process        =>  \&exit_process,
     },
     heap => {
         workers => 0,
@@ -60,7 +61,26 @@ POE::Session->create(
 sub start {
     my ($kernel,$heap) =  @_[KERNEL, HEAP];
     init_currency_poller();
+    $kernel->alias_set('main');
     $kernel->yield('new_worker');
+}
+
+sub shutdown {
+    my ($kernel,$heap) =  @_[KERNEL, HEAP];
+    foreach my $process_id (keys %{$heap->{task}}) {
+        my $target = $heap->{task}->{$process_id};
+        if (ref($target) eq 'HASH' && defined $target->{pid}) { 
+            kill 1,$target->{pid};
+        }
+    }
+    sleep(5);
+    do { exit };
+}
+
+sub exit_process {
+    my ($kernel,$heap,$code) =  @_[KERNEL, HEAP, ARG0];
+    if (!defined $code) { $code = 1 }
+    exit $code;
 }
 
 sub new_worker {
@@ -68,7 +88,7 @@ sub new_worker {
 
     if ($halt) { return }
 
-    if ($heap->{workers} >= 4) { return }
+    if ($heap->{workers} >= $worker_count) { return }
     elsif (!-e "/tmp/subscription.json") { 
         $kernel->delay('new_worker' => 10);
         return;

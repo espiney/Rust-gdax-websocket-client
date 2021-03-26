@@ -138,10 +138,8 @@ fn main() {
                 let pkey = format!("{}:{}",product_id,message_sequence);
 
                 // Set it in the main set
-                let _: () = redis::cmd("SET").arg(pkey).arg(&message).query(&mut conn_set).expect("");
-                let _: () = redis::cmd("PUBLISH").arg(product_id).arg(message_sequence).query(&mut conn_publish).expect("");
-
-                //pubsub.subscribe(product_id);
+                redis::cmd("SET").arg(pkey).arg(&message).execute(&mut conn_set);
+                redis::cmd("PUBLISH").arg(product_id).arg(message_sequence).execute(&mut conn_publish);
             }
         }
     });
