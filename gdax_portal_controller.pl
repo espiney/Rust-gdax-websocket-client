@@ -47,6 +47,7 @@ POE::Session->create(
 sub start {
     my ($kernel,$heap) =  @_[KERNEL, HEAP];
     init_currency_poller();
+    $kernel->yield('new_worker');
 }
 
 sub new_worker {
