@@ -5,9 +5,28 @@
 # number of forked processes that can run at any given time.
 use warnings;
 use strict;
-use POE qw(Wheel::Run Filter::Reference Wheel::ReadWrite);
-
 use v5.32.0;
+use Data::Dumper;
+
+use POE qw(Wheel::Run Filter::Reference Wheel::ReadWrite Component::Client::WebSocket);
+use JSON::MaybeXS;
+use Try::Tiny;
+
+# Global objects
+my $json        =   JSON::MaybeXS->new(utf8 => 0);
+my $cache       =   {
+    currency_list   =>  [],
+    last_update     =>  time-10000,
+    sub_template    =>  {
+        'type'      =>  'subscribe',
+        'channels'  =>  [
+            {
+                'name'          =>  'full',
+                'product_ids'   =>  []
+            }
+        ]
+    }
+};
 
 # Start the session that will manage all the children.  The _start and
 # next_task events are handled by the same function.
@@ -27,10 +46,11 @@ POE::Session->create(
 
 sub start {
     my ($kernel,$heap) =  @_[KERNEL, HEAP];
-    $kernel->yield('new_worker');
-    $kernel->delay_add('new_worker' => 5);
-    $kernel->delay_add('new_worker' => 10);
-    $kernel->delay_add('new_worker' => 15);
+    init_currency_poller();
+    #$kernel->yield('new_worker');
+    #$kernel->delay_add('new_worker' => 5);
+    #$kernel->delay_add('new_worker' => 10);
+    #$kernel->delay_add('new_worker' => 15);
 }
 
 sub new_worker {
@@ -56,12 +76,6 @@ sub new_worker {
 # child process.  In this sample, it's a hash reference.
 sub handle_task_stdout {
     my ($kernel,$heap,$stdout,$wheel_id) = @_[KERNEL,HEAP,ARG0,ARG1];
-
-    # Increment the rc count for the wheel
-    $heap->{task}->{$wheel_id}->{rx}++;
-    if ($heap->{task}->{$wheel_id}->{rx} % 100000 == 0) {
-        say "worker($wheel_id): ".$heap->{task}->{$wheel_id}->{rx}." processed records.";
-    }
 
     my @dataset = split(/\s+/,$stdout,5);
 
@@ -104,6 +118,123 @@ sub sig_child {
     say "Sig($wid) received on worker, pid $pid (rx: $rxc)";
 
     $kernel->yield('new_worker');
+}
+
+sub init_currency_poller() {
+    POE::Session->create(
+        inline_states => {
+            '_start'      =>  sub {
+                my ($kernel,$heap) = @_[KERNEL,HEAP];
+
+                # Create any objects we will have to use
+                $heap->{cache}->{status_channel}    =
+                    encode_json({
+                        'type'      =>  'subscribe',
+                        'channels'  =>  [{ 'name'   =>  'status'}]
+                    });
+                $heap->{cache}->{currency_list}     =
+                    [];
+                $heap->{stash}->{last_update}       =
+                    0;
+
+                # Create an alias so people know who we are
+                $kernel->alias_set('currency_poller');
+                # Stage 1 start a scheduler
+                $kernel->yield('scheduler');
+                # Stage 2 initilize the websocket session
+                $kernel->yield('connect_websocket');
+            },
+            'connect_websocket' => sub {
+                my ($kernel,$heap) = @_[KERNEL,HEAP];
+                $heap->{ws} = POE::Component::Client::WebSocket->new(
+                    'wss://ws-feed.pro.coinbase.com'
+                );
+                $heap->{ws}->connect;
+            },
+            'scheduler'   =>  sub {
+                my ($kernel,$heap)  =   @_[KERNEL,HEAP];
+
+                # Create a 1 second scheduler to enforce longevity
+                $kernel->delay('scheduler' => 1);
+            },
+            'websocket_handshake' =>  sub {
+                my ($kernel,$heap)  =   @_[KERNEL,HEAP];
+                $heap->{ws}->send($heap->{cache}->{status_channel});
+                $heap->{connection}  = 1;
+            },
+            'websocket_disconnected' => sub {
+                my ($kernel,$heap) = @_[KERNEL,HEAP];
+                $heap->{connection}  = 0;
+                $kernel->yield('connect_websocket');
+            },
+            'websocket_read' => sub {
+                my ($kernel,$heap,$read) = @_[KERNEL,HEAP,ARG0];
+
+                my $packet          =   undef;
+                my $currency_list   =   [];
+
+                # Try to decode the json packet first
+                try {
+                    $packet = $json->decode($read);
+                };
+
+                # Initial validation because we do not trust these fucks
+                if (
+                    !defined ($packet)
+                    || ref($packet) ne 'HASH'
+                    || !defined($packet->{'type'})
+                ) {
+                    # Wow, spechul;
+                    return;
+                }
+
+                # Derive the packet type
+                my $packet_type     =   $packet->{'type'};
+
+                say "websocket read (type: $packet_type) ";
+
+                # Put this in its own handler TODO
+                if ($packet_type eq 'status') {
+                    foreach my $currency (@{$packet->{products}}) {
+                        my $currency_id = $currency->{id};
+                        if ($currency->{status} ne 'online') { next }
+                        push(@{$currency_list},$currency->{id});
+                    }
+
+                    # Check if the new list is differnet to the old
+                    # by comparing, joining and checking them
+                    my @listA       =
+                        sort { $a cmp $b } @{$cache->{currency_list}};
+                    my @listB       =
+                        sort { $a cmp $b } @{$currency_list};
+
+                    my $listAJoined =
+                        join('',@listA);
+                    my $listBJoined =
+                        join('',@listB);
+
+                    if ($listAJoined ne $listBJoined) {
+                        $heap->{cache}->{last_update}   =   time;
+                        $cache->{currency_list} = $currency_list;
+                        $kernel->yield('alert_currency_list_change');
+                    }
+                }
+            },
+            'alert_currency_list_change' => sub {
+                my ($kernel,$heap) = @_[KERNEL,HEAP];
+                say STDERR time." Currency list updated";
+                $cache->{sub_template}->{channels}->[0]->{product_ids} = $cache->{currency_list};
+                open(my $fh,'>','/tmp/subscription.json');
+                print $fh $json->encode($cache->{sub_template});
+                close($fh);
+            },
+            'active_currency_list' => sub {
+                my ($kernel,$sender,$heap) = @_[KERNEL,SENDER,HEAP];
+
+                $kernel->post($sender->ID,'active_currency_list',$heap->{cache}->{currency_list});
+            }
+        },
+    );
 }
 
 # Run until there are no more tasks.

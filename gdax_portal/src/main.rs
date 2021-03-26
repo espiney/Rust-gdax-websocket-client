@@ -3,6 +3,7 @@ extern crate redis;
 
 //use std::io::stdin;
 use std::sync::mpsc::channel;
+use std::fs;
 use std::thread;
 
 use websocket::client::ClientBuilder;
@@ -74,7 +75,7 @@ fn main() {
 
     let receive_loop = thread::spawn(move || {
         // Send subscribe packet
-        let subscribe_text = "{\"type\": \"subscribe\", \"channels\": [{\"name\": \"full\", \"product_ids\": [\"MATIC-BTC\", \"SUSHI-EUR\", \"SUSHI-GBP\", \"MATIC-GBP\", \"MATIC-USD\", \"MATIC-EUR\", \"SKL-GBP\", \"SKL-USD\", \"SKL-BTC\", \"SKL-EUR\", \"ADA-USD\", \"ADA-BTC\", \"ADA-EUR\", \"ADA-GBP\", \"SUSHI-BTC\", \"SUSHI-ETH\", \"SUSHI-USD\", \"AAVE-USD\", \"ALGO-BTC\", \"BNT-BTC\", \"BNT-USD\", \"CGLD-EUR\", \"COMP-BTC\", \"LTC-BTC\", \"ETC-BTC\", \"ETH-BTC\", \"LINK-ETH\", \"CVC-USDC\", \"DNT-USDC\", \"LOOM-USDC\", \"LINK-GBP\", \"AAVE-BTC\", \"AAVE-EUR\", \"BTC-USD\", \"AAVE-GBP\", \"BAT-ETH\", \"BNT-EUR\", \"BNT-GBP\", \"DAI-USD\", \"EOS-BTC\", \"FIL-BTC\", \"FIL-EUR\", \"FIL-GBP\", \"FIL-USD\", \"GRT-BTC\", \"GRT-EUR\", \"GRT-GBP\", \"GRT-USD\", \"KNC-USD\", \"LINK-BTC\", \"LRC-BTC\", \"LRC-USD\", \"ALGO-GBP\", \"LTC-EUR\", \"BAL-USD\", \"BAND-USD\", \"BAND-BTC\", \"BAND-EUR\", \"BAND-GBP\", \"CGLD-BTC\", \"CGLD-USD\", \"MKR-BTC\", \"MKR-USD\", \"NMR-USD\", \"NMR-BTC\", \"NMR-EUR\", \"NMR-GBP\", \"NU-BTC\", \"NU-EUR\", \"NU-GBP\", \"NU-USD\", \"OMG-BTC\", \"OMG-EUR\", \"OMG-GBP\", \"REN-BTC\", \"REN-USD\", \"REP-BTC\", \"REP-USD\", \"SNX-BTC\", \"SNX-EUR\", \"SNX-GBP\", \"SNX-USD\", \"UMA-BTC\", \"UMA-EUR\", \"UMA-GBP\", \"LTC-GBP\", \"UNI-BTC\", \"LTC-USD\", \"ETC-EUR\", \"ETC-GBP\", \"ETC-USD\", \"ALGO-USD\", \"BAT-USDC\", \"ETH-GBP\", \"ETH-USDC\", \"BCH-BTC\", \"BCH-EUR\", \"BCH-GBP\", \"BCH-USD\", \"ETH-USD\", \"UNI-USD\", \"LINK-EUR\", \"BTC-EUR\", \"EOS-USD\", \"BTC-USDC\", \"BTC-GBP\", \"KNC-BTC\", \"OMG-USD\", \"UMA-USD\", \"WBTC-BTC\", \"WBTC-USD\", \"XLM-BTC\", \"XLM-EUR\", \"ETH-EUR\", \"ETH-DAI\", \"GNT-USDC\", \"MANA-USDC\", \"LINK-USD\", \"ALGO-EUR\", \"ATOM-BTC\", \"ATOM-USD\", \"BAL-BTC\", \"CGLD-GBP\", \"COMP-USD\", \"DAI-USDC\", \"DASH-BTC\", \"DASH-USD\", \"EOS-EUR\", \"OXT-USD\", \"XLM-USD\", \"XTZ-USD\", \"XTZ-EUR\", \"XTZ-GBP\", \"XTZ-BTC\", \"YFI-BTC\", \"YFI-USD\", \"ZEC-USD\", \"ZEC-BTC\", \"ZEC-USDC\", \"ZRX-BTC\", \"ZRX-EUR\", \"ZRX-USD\"]}]}".to_string();
+        let subscribe_text = fs::read_to_string("/tmp/subscription.json").expect("Something went wrong reading the file");
         tx_1.send(OwnedMessage::Text(subscribe_text));
 
         // Receive loop
