@@ -47,14 +47,19 @@ POE::Session->create(
 sub start {
     my ($kernel,$heap) =  @_[KERNEL, HEAP];
     init_currency_poller();
-    #$kernel->yield('new_worker');
-    #$kernel->delay_add('new_worker' => 5);
-    #$kernel->delay_add('new_worker' => 10);
-    #$kernel->delay_add('new_worker' => 15);
 }
 
 sub new_worker {
     my ($kernel, $heap) = @_[KERNEL, HEAP];
+
+    if ($heap->{workers} >= 4) { return }
+    elsif (!-e "/tmp/subscription.json") { 
+        $kernel->delay('new_worker' => 10);
+        return;
+    }
+    else {
+        $kernel->delay('new_worker' => 10);
+    }
 
     my $task = POE::Wheel::Run->new(
         Program      => 'sh -c gdax_portal/run_release',
