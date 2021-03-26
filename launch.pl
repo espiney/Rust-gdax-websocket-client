@@ -60,7 +60,7 @@ my $rust = `rustc --version`;
 if ($rust =~ m/^rustc ([0-9.]+)/) {
     my $rust_version = $1;
     say("Yes we have rust version: $rust_version");
-    $enviroment_checklist->{rust} = 1;
+    $enviroment_checklist->{rustc} = 1;
 }
 # Do we have POE
 my $perl_POE = `perl -e 'use POE'`;
@@ -132,15 +132,20 @@ say "Configuring nginx";
 
     # Swap out the ERROR_PATH and PID_PATH for real values
     my $nginx_error_log = "$temp_tree/nginx_error.log";
-    my $nginx_pid = "$temp_tree/nginx.pid";
+    my $nginx_access_log = "$temp_tree/nginx_access.log";
+    my $nginx_pid_file = "$temp_tree/nginx.pid";
     $nginx_template =~ s/ERROR_LOG/$nginx_error_log/;
-    $nginx_template =~ s/PID_FILE/$nginx_pid/;
-    
+    $nginx_template =~ s/ACCESS_LOG/$nginx_access_log/;
+    $nginx_template =~ s/PID_FILE/$nginx_pid_file/;
+
     # Write the resultant config
     my $nginx_config_path = "$temp_tree/nginx.conf";
     open(my $fh,'>',$nginx_config_path);
     print $fh $nginx_template;
     close($fh);
+
+    # Also copy mime types
+    path("$base_path/etc/mime.types")->copy("$temp_tree/mime.types");
 }
 
 say "Configuring redis";
@@ -155,8 +160,10 @@ say "Configuring redis";
     };
 
     my $unix_socket_path = "$temp_tree/redis.sock";
+    my $redis_log_path = "$temp_tree/redis.log";
     $redis_template =~ s/UNIX_SOCKET_PATH/$unix_socket_path/;
-   
+    $redis_template =~ s/REDIS_LOGFILE/$redis_log_path/;
+
     # Write the resultant config
     my $redis_config_path = "$temp_tree/redis.conf";
     open(my $fh,'>',$redis_config_path);
