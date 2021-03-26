@@ -12,6 +12,18 @@ use POE qw(Wheel::Run Filter::Reference Wheel::ReadWrite Component::Client::WebS
 use JSON::MaybeXS;
 use Try::Tiny;
 
+# Capture ctrl-c
+$SIG{INT} = \&killall;
+my $halt = 0;
+
+sub killall {
+    $SIG{INT} = \&killall;
+    $halt = 1;
+    `killall gdax_portal`; # should really do a poe::kernel call to a kill handler
+    sleep(5);
+    exit;
+}
+
 # Global objects
 my $json        =   JSON::MaybeXS->new(utf8 => 0);
 my $cache       =   {
@@ -54,6 +66,8 @@ sub start {
 sub new_worker {
     my ($kernel, $heap) = @_[KERNEL, HEAP];
 
+    if ($halt) { return }
+
     if ($heap->{workers} >= 4) { return }
     elsif (!-e "/tmp/subscription.json") { 
         $kernel->delay('new_worker' => 10);
@@ -93,9 +107,8 @@ sub handle_task_stdout {
         kill 1,$pid;
         say "worker($wheel_id) Kill";
     }
-    else {
-        say "($wheel_id): $stdout";
-    }
+
+     say "($wheel_id): $stdout";
 }
 
 # Catch and display information from the child's STDERR.  This was
@@ -113,6 +126,8 @@ sub handle_task_result {
     my $pid = delete $heap->{task}->{$wheel_id}->{pid};
     delete $heap->{task}->{$pid};
 
+    $heap->{workers}--;
+
     $kernel->yield('new_worker');
 }
 
@@ -123,6 +138,8 @@ sub sig_child {
     my $wid = delete $heap->{task}->{$pid};
     my $rxc = $heap->{task}->{$wid}->{rx};
     delete $heap->{task}->{$wid};
+
+    $heap->{workers}--;
 
     say "Sig($wid) received on worker, pid $pid (rx: $rxc)";
 
