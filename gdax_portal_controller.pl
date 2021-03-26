@@ -41,6 +41,7 @@ POE::Session->create(
         sig_child           =>  \&sig_child,
     },
     heap => {
+        workers => 0,
     }
 );
 
@@ -61,6 +62,8 @@ sub new_worker {
     else {
         $kernel->delay('new_worker' => 10);
     }
+
+    $heap->{workers}++;
 
     my $task = POE::Wheel::Run->new(
         Program      => 'sh -c gdax_portal/run_release',
