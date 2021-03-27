@@ -11,6 +11,17 @@ use Data::Dumper;
 use POE qw(Wheel::Run Filter::Reference Wheel::ReadWrite Component::Client::WebSocket);
 use JSON::MaybeXS;
 use Try::Tiny;
+use Cwd 'abs_path';
+use Path::Tiny;
+
+# Paths
+my $script_path = abs_path($0);
+my $path_obj = path($script_path);
+my $base_path = $path_obj->parent->parent;
+my $home = $ENV{'HOME'};
+my $basedir = "$home/.tmp/gdax_runner";
+my $redis_config = "$basedir/redis.conf";
+my $nginx_config = "$basedir/nginx.conf";
 
 # Capture ctrl-c
 $SIG{INT} = \&killall;
@@ -52,6 +63,8 @@ POE::Session->create(
         sig_child           =>  \&sig_child,
         shutdown            =>  \&shutdown,
         exit_process        =>  \&exit_process,
+        start_redis         =>  \&start_redis,
+        start_nginx         =>  \&start_nginx,
     },
     heap => {
         workers => 0,
@@ -59,10 +72,12 @@ POE::Session->create(
 );
 
 sub start {
-    my ($kernel,$heap) =  @_[KERNEL, HEAP];
+    my ($kernel,$session,$heap) =  @_[KERNEL, SESSION, HEAP];
     init_currency_poller();
+    $kernel->call($session, 'start_redis');
+    $kernel->call($session, 'start_nginx');
     $kernel->alias_set('main');
-    $kernel->yield('new_worker');
+    $kernel->delay('new_worker' => 10);
 }
 
 sub shutdown {
@@ -70,9 +85,12 @@ sub shutdown {
     foreach my $process_id (keys %{$heap->{task}}) {
         my $target = $heap->{task}->{$process_id};
         if (ref($target) eq 'HASH' && defined $target->{pid}) { 
-            kill 1,$target->{pid};
+            # Note EVERYTHING will exit with '1' except redis, fuck you redis.
+            kill 9,$target->{pid};
         }
     }
+    # Make sure to kill the nginx as its a pest.
+    `killall nginx`;
     sleep(5);
     do { exit };
 }
@@ -83,13 +101,49 @@ sub exit_process {
     exit $code;
 }
 
+sub start_redis {
+    my ($kernel, $heap) = @_[KERNEL, HEAP];
+
+    my $task = POE::Wheel::Run->new(
+        Program      => 'redis-server',
+        ProgramArgs  => [$redis_config],
+        StdoutFilter => POE::Filter::Line->new(),
+        StdoutEvent  => "task_stdout",
+        StderrEvent  => "task_stderr",
+        CloseEvent   => "task_done",
+    );
+
+    $heap->{task}->{$task->ID} = { obj=>$task, pid=>$task->PID, id=>$task->ID, rx=>0 };
+    $heap->{task}->{$task->PID} = $task->ID;
+
+    $kernel->sig_child($task->PID, "sig_child");
+}
+
+sub start_nginx {
+    my ($kernel, $heap) = @_[KERNEL, HEAP];
+
+    my $task = POE::Wheel::Run->new(
+        Program      => 'nginx',
+        ProgramArgs  => ['-c',$nginx_config],
+        StdoutFilter => POE::Filter::Line->new(),
+        StdoutEvent  => "task_stdout",
+        StderrEvent  => "task_stderr",
+        CloseEvent   => "task_done",
+    );
+
+    $heap->{task}->{$task->ID} = { obj=>$task, pid=>$task->PID, id=>$task->ID, rx=>0 };
+    $heap->{task}->{$task->PID} = $task->ID;
+
+    $kernel->sig_child($task->PID, "sig_child");
+}
+
 sub new_worker {
     my ($kernel, $heap) = @_[KERNEL, HEAP];
 
     if ($halt) { return }
 
     if ($heap->{workers} >= $worker_count) { return }
-    elsif (!-e "/tmp/subscription.json") { 
+    elsif (!-e "$basedir/subscription.json") { 
         $kernel->delay('new_worker' => 10);
         return;
     }
@@ -99,8 +153,10 @@ sub new_worker {
 
     $heap->{workers}++;
 
+    my $rust_path = "$base_path/gdax_portal/target/release/gdax_portal";
+
     my $task = POE::Wheel::Run->new(
-        Program      => 'sh -c gdax_portal/run_release',
+        Program      => 'sh -c "'.$rust_path.'"',
         StdoutFilter => POE::Filter::Line->new(),
         StdoutEvent  => "task_stdout",
         StderrEvent  => "task_stderr",
@@ -270,7 +326,7 @@ sub init_currency_poller() {
                 my ($kernel,$heap) = @_[KERNEL,HEAP];
                 say STDERR time." Currency list updated";
                 $cache->{sub_template}->{channels}->[0]->{product_ids} = $cache->{currency_list};
-                open(my $fh,'>','/tmp/subscription.json');
+                open(my $fh,'>',"$basedir/subscription.json");
                 print $fh $json->encode($cache->{sub_template});
                 close($fh);
             },

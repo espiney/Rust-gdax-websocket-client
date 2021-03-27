@@ -9,27 +9,25 @@ use std::thread;
 use websocket::client::ClientBuilder;
 use websocket::{Message, OwnedMessage};
 
-//use redis::{PubSubCommands, ControlFlow};
-
-const CONNECTION: &'static str = "ws://127.0.0.1";
+const WSCON: &'static str = "ws://127.0.0.1:8080";
 
 fn connect() -> redis::Connection {
-    let redis_conn_url = "redis+unix:///tmp/redis.sock";
-    redis::Client::open(redis_conn_url)
+    let home = dirs::home_dir().expect("test").into_os_string().into_string().unwrap();
+    let redis_path = format!("redis+unix://{}{}",home,"/.tmp/gdax_runner/redis.sock");
+    redis::Client::open(redis_path)
         .expect("Invalid connection URL")
         .get_connection()
         .expect("failed to connect to Redis")
 }
 
-
 fn main() {
-    println!("WSB MAIN CONNECTING {}", CONNECTION);
+    println!("WSB MAIN CONNECTING {}",WSCON);
 
     // Multiple connections to redis ...
     let mut conn_set = connect();
     let mut conn_publish = connect();
 
-    let client = ClientBuilder::new(CONNECTION)
+    let client = ClientBuilder::new(WSCON)
         .unwrap()
         .add_protocol("rust-websocket")
         .connect_insecure()
@@ -74,8 +72,10 @@ fn main() {
     });
 
     let receive_loop = thread::spawn(move || {
+        let home = dirs::home_dir().expect("test").into_os_string().into_string().unwrap();
+        let sub_path = format!("{}{}",home,"/.tmp/gdax_runner/subscription.json");
         // Send subscribe packet
-        let subscribe_text = fs::read_to_string("/tmp/subscription.json").expect("Something went wrong reading the file");
+        let subscribe_text = fs::read_to_string(sub_path).expect("Something went wrong reading the file");
         tx_1.send(OwnedMessage::Text(subscribe_text));
 
         // Receive loop
