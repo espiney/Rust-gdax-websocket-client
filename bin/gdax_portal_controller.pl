@@ -143,7 +143,7 @@ sub new_worker {
     if ($halt) { return }
 
     if ($heap->{workers} >= $worker_count) { return }
-    elsif (!-e "/tmp/subscription.json") { 
+    elsif (!-e "$basedir/subscription.json") { 
         $kernel->delay('new_worker' => 10);
         return;
     }
@@ -326,7 +326,7 @@ sub init_currency_poller() {
                 my ($kernel,$heap) = @_[KERNEL,HEAP];
                 say STDERR time." Currency list updated";
                 $cache->{sub_template}->{channels}->[0]->{product_ids} = $cache->{currency_list};
-                open(my $fh,'>','/tmp/subscription.json');
+                open(my $fh,'>',"$basedir/subscription.json");
                 print $fh $json->encode($cache->{sub_template});
                 close($fh);
             },

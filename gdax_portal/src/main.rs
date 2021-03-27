@@ -72,8 +72,10 @@ fn main() {
     });
 
     let receive_loop = thread::spawn(move || {
+        let home = dirs::home_dir().expect("test").into_os_string().into_string().unwrap();
+        let sub_path = format!("{}{}",home,"/.tmp/gdax_runner/subscription.json");
         // Send subscribe packet
-        let subscribe_text = fs::read_to_string("/tmp/subscription.json").expect("Something went wrong reading the file");
+        let subscribe_text = fs::read_to_string(sub_path).expect("Something went wrong reading the file");
         tx_1.send(OwnedMessage::Text(subscribe_text));
 
         // Receive loop
