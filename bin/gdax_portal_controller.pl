@@ -88,6 +88,7 @@ sub shutdown {
             kill 9,$target->{pid};
         }
     }
+    `killall nginx`; # fuck you
     sleep(5);
     do { exit };
 }
