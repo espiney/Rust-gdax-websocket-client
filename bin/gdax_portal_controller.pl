@@ -85,10 +85,12 @@ sub shutdown {
     foreach my $process_id (keys %{$heap->{task}}) {
         my $target = $heap->{task}->{$process_id};
         if (ref($target) eq 'HASH' && defined $target->{pid}) { 
+            # Note EVERYTHING will exit with '1' except redis, fuck you redis.
             kill 9,$target->{pid};
         }
     }
-    `killall nginx`; # fuck you
+    # Make sure to kill the nginx as its a pest.
+    `killall nginx`;
     sleep(5);
     do { exit };
 }
